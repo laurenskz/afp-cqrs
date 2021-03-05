@@ -1,1 +1,1 @@
-# afp-cqrs
+# cqrs
