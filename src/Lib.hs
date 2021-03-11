@@ -43,13 +43,16 @@ data BankAccountUpdatedEvent = BankAccountUpdatedEvent BankAccountId Balance
 --   handle (NewTransactionCommand id amount) = return ()
 
 -- type HandlerFunc = (Command c) => c -> State Int ()
-data Handlers t hs where 
-    Handler :: t -> hs -> Handlers t hs
-    EndHandlers :: Handlers t hs
+
+data Handlers s t hs where 
+    Handler :: (t -> State s ()) -> Handlers s t' hs' -> Handlers s t (Handlers s t' hs')
+    EndHandlers :: Handlers s () ()
 data CommandHandler s hs = CommandHandler s hs
 
+bankAccountHandler :: CommandHandler Integer (Handlers Balance NewTransactionCommand (Handlers Balance NewSubscriptionCommand (Handlers Balance NewSubscriptionCommand (Handlers Balance () ()))))
 bankAccountHandler = CommandHandler 0 
-    $ Handler (\(NewTransactionCommand id amount) -> return ())
+    $ Handler (\(NewTransactionCommand id amount) -> modify (\s -> s - amount))
+    $ Handler (\(NewSubscriptionCommand id amount) -> modify (\s -> s - amount))
     $ Handler (\(NewSubscriptionCommand id amount) -> return ())
     EndHandlers
 
