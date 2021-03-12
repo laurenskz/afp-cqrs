@@ -27,21 +27,21 @@ newtype BookedSomethingEvent = BookedSomethingEvent Int
 
 data Handler (events :: [Type]) where
   Empty :: Handler '[]
-  (:^|^:) :: (e -> Int) -> Handler es -> Handler (e : es)
+  (:^|) :: (e -> Int) -> Handler es -> Handler (e : es)
 
-infixr 6 :^|^:
+infixr 6 :^|
 
 class Invokable i a where
   invoke :: i -> a -> Int
 
 instance {-# OVERLAPS #-} Invokable (Handler (e : es)) e where
-  invoke (f :^|^: _) = f
+  invoke (f :^| _) = f
 
 instance {-# OVERLAPPABLE #-} (Invokable (Handler es) e') => Invokable (Handler (e : es)) e' where
-  invoke (_ :^|^: fs) e = invoke fs e
+  invoke (_ :^| fs) e = invoke fs e
 
 sampleHandler :: Handler '[ReceivedMoneyEvent, BookedSomethingEvent]
-sampleHandler = (\(ReceivedMoneyEvent x) -> x) :^|^: (\(BookedSomethingEvent x) -> x) :^|^: Empty
+sampleHandler = (\(ReceivedMoneyEvent x) -> x) :^| (\(BookedSomethingEvent x) -> x) :^| Empty
 
 handleEvent :: Invokable i e => i -> e -> Int
 handleEvent = invoke
