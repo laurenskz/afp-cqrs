@@ -9,11 +9,14 @@
 {-# LANGUAGE StarIsType #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module Poc where
 
 import Control.Monad.State
 import Data.Kind (Type)
+import Data.Typeable
 
 type UserId = String
 
@@ -23,31 +26,116 @@ type NewBalance = Int
 
 newtype ReceivedMoneyEvent = ReceivedMoneyEvent Int
 
+instance Parsable ReceivedMoneyEvent where
+  parse "" = ReceivedMoneyEvent 0
+
 newtype BookedSomethingEvent = BookedSomethingEvent Int
+
+instance Parsable BookedSomethingEvent where
+  parse "" = BookedSomethingEvent 0
+
+class Parsable a where
+  parse :: String -> a
+
+instance (Parsable a) => Parsable (a -> Int) where
+  parse = parse
 
 data Handler (events :: [Type]) where
   Empty :: Handler '[]
-  (:^|) :: (e -> Int) -> Handler es -> Handler (e : es)
+  (:^|) :: (Typeable e, Parsable e) => (e -> Int) -> Handler es -> Handler (e : es)
 
 infixr 6 :^|
 
-class Invokable i a where
-  invoke :: i -> a -> Int
+-- instance (Show e) => Show (e -> Int) where
+--   show f = show $ typeRep f
 
-instance {-# OVERLAPS #-} Invokable (Handler (e : es)) e where
-  invoke (f :^| _) = f
+data Test = Not | First | Succ Test
+type family Member' x xs where
+   Member' x '[] = Not
+   Member' x (x ': xs) = First
+   Member' x (y ': xs) = Succ (Member' x xs)
 
-instance {-# OVERLAPPABLE #-} (Invokable (Handler es) e') => Invokable (Handler (e : es)) e' where
-  invoke (_ :^| fs) e = invoke fs e
+
+data Elem xs x where
+  Here :: Elem (x ': xs) x
+  There :: Elem xs x -> Elem (y ': xs) x
+  
+invoke' :: Elem es e -> Handler es -> e -> Int
+invoke' Here (f :^| _) = f
+invoke' (There s) (_ :^| fs) = invoke' s fs
+invoke :: (Member es e) => Handler es -> e -> Int
+invoke = invoke' position
+
+class Member xs x where
+  position :: Elem xs x
+instance {-# OVERLAPS #-} Member (e : es) e where
+  position = Here
+instance {-# OVERLAPS #-} (Member es e) => Member (e' : es) e where
+  position = There position
 
 sampleHandler :: Handler '[ReceivedMoneyEvent, BookedSomethingEvent]
-sampleHandler = (\(ReceivedMoneyEvent x) -> x) :^| (\(BookedSomethingEvent x) -> x) :^| Empty
-
-handleEvent :: Invokable i e => i -> e -> Int
-handleEvent = invoke
+sampleHandler = received :^| booked :^| Empty
+  where
+    received (ReceivedMoneyEvent x)   = x
+    booked   (BookedSomethingEvent x) = x
 
 test :: Int
 test = invoke sampleHandler (ReceivedMoneyEvent 5) + invoke sampleHandler (BookedSomethingEvent 5)
+test2 = invoke sampleHandler (ReceivedMoneyEvent 5)
+test3 = invoke sampleHandler (BookedSomethingEvent 5)
+
+newtype UnhandledEvent = UnhandledEvent Int
+
+data Stream h where
+  StreamEmpty :: Stream h
+  (:+|) :: (Member es e) => e -> Stream es -> Stream es
+
+infixr 6 :+|
+
+events :: Stream '[ReceivedMoneyEvent, BookedSomethingEvent]
+events = ReceivedMoneyEvent 0 :+| BookedSomethingEvent 0 :+| BookedSomethingEvent 0 :+| StreamEmpty
+
+process :: Handler ts -> Stream ts -> Int
+process h (e :+| es) = invoke h e + process h es
+
+eventName :: (Typeable a) => a -> String
+eventName = show . head . typeRepArgs . typeOf
+
+eventNames :: Handler es -> [String]
+eventNames (e :^| es) = eventName e : eventNames es
+eventNames Empty      = []
+
+
+parse' :: Elem es e -> Handler es -> String -> e
+parse' Here (f :^| _) = parse
+parse' (There s) (_ :^| fs) = parse' s fs
+
+parseEvent :: Handler es -> String -> e
+parseEvent h json = parse' (parseEvent' h json) h json
+
+parseEvent' :: Handler es -> String -> Elem es e
+parseEvent' (e :^| es) json 
+  | json == eventName e = undefined -- TODO Here
+  | otherwise = There $ parseEvent' es json
+
+-- t = process sampleHandler $ x :+| StreamEmpty
+
+-- getStream h = foldr c StreamEmpty names -- TODO read from a store
+-- getStream h = foldr (\n p -> parseEvent h n :+| p) g names
+getStream :: Handler es -> e
+getStream h = parseEvent h $ head $ eventNames h
+  -- where
+  --   names  = eventNames h
+  --   c :: String -> Stream ts -> Stream ts
+  --   -- c "ReceivedMoneyEvent"   p = ReceivedMoneyEvent   0 :+| p
+  --   -- c "BookedSomethingEvent" p = BookedSomethingEvent 0 :+| p
+  --   c e _ = error $ "Unexpected event: " ++ e
+
+-- bootstrap :: Handler es -> Int
+bootstrap h = process h $ getStream h
+
+poc :: String
+poc = show $ bootstrap sampleHandler
 
 {-
 Some key observations:
