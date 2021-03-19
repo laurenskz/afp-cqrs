@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -7,13 +8,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE StarIsType #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE ConstraintKinds #-}
 
 module Poc where
 
+import Control.Applicative ((<|>))
 import Control.Monad.State
 import Data.Kind (Type)
 import Data.Typeable
@@ -46,96 +47,97 @@ data Handler (events :: [Type]) where
 
 infixr 6 :^|
 
--- instance (Show e) => Show (e -> Int) where
---   show f = show $ typeRep f
-
-data Test = Not | First | Succ Test
-type family Member' x xs where
-   Member' x '[] = Not
-   Member' x (x ': xs) = First
-   Member' x (y ': xs) = Succ (Member' x xs)
-
-
 data Elem xs x where
   Here :: Elem (x ': xs) x
   There :: Elem xs x -> Elem (y ': xs) x
-  
-invoke' :: Elem es e -> Handler es -> e -> Int
-invoke' Here (f :^| _) = f
-invoke' (There s) (_ :^| fs) = invoke' s fs
-invoke :: (Member es e) => Handler es -> e -> Int
-invoke = invoke' position
 
-class Member xs x where
+invoke :: Handler es -> Event es -> Int
+invoke Empty (Ev _ _) = 0
+invoke (f :^| _) (Ev Here e) = f e
+invoke (_ :^| fs) (Ev (There s) e) = invoke fs (Ev s e)
+
+class Indexable xs x where
   position :: Elem xs x
-instance {-# OVERLAPS #-} Member (e : es) e where
+
+instance {-# OVERLAPS #-} Indexable (e : es) e where
   position = Here
-instance {-# OVERLAPS #-} (Member es e) => Member (e' : es) e where
+
+instance {-# OVERLAPS #-} (Indexable es e) => Indexable (e' : es) e where
   position = There position
 
 sampleHandler :: Handler '[ReceivedMoneyEvent, BookedSomethingEvent]
 sampleHandler = received :^| booked :^| Empty
   where
-    received (ReceivedMoneyEvent x)   = x
-    booked   (BookedSomethingEvent x) = x
+    received (ReceivedMoneyEvent x) = x
+    booked (BookedSomethingEvent x) = x
 
 test :: Int
-test = invoke sampleHandler (ReceivedMoneyEvent 5) + invoke sampleHandler (BookedSomethingEvent 5)
-test2 = invoke sampleHandler (ReceivedMoneyEvent 5)
-test3 = invoke sampleHandler (BookedSomethingEvent 5)
+test = invoke sampleHandler (event (ReceivedMoneyEvent 5)) + invoke sampleHandler (event (BookedSomethingEvent 5))
+
+test2 = invoke sampleHandler (event (ReceivedMoneyEvent 5))
+
+test3 = invoke sampleHandler (event (BookedSomethingEvent 5))
 
 newtype UnhandledEvent = UnhandledEvent Int
 
-data Stream h where
+data Event (as :: [Type]) where
+  Ev :: Elem as a -> a -> Event as
+
+data All f xs where
+  Nil :: All f '[]
+  Cons :: f x -> All f xs -> All f (x ': xs)
+
+type IsSubset xs ys = All (Elem ys) xs
+
+event :: (Indexable as a) => a -> Event as
+event = Ev position
+
+promote :: Event as -> Event (a : as)
+promote (Ev p e) = Ev (There p) e
+
+data Stream (events :: [Type]) where
   StreamEmpty :: Stream h
-  (:+|) :: (Member es e) => e -> Stream es -> Stream es
+  (:+|) :: Event es -> Stream es -> Stream es
 
 infixr 6 :+|
 
+data Parser (events :: [Type]) where
+  PNothing :: Parser '[]
+  (:<|) :: (String -> Maybe e) -> Parser es -> Parser (e : es)
+
+infixr 6 :<|
+
+parseEvent :: Parser es -> String -> Maybe (Event es)
+parseEvent PNothing _ = Nothing
+parseEvent (p :<| ps) s = fmap event (p s) <|> fmap promote (parseEvent ps s)
+
 events :: Stream '[ReceivedMoneyEvent, BookedSomethingEvent]
-events = ReceivedMoneyEvent 0 :+| BookedSomethingEvent 0 :+| BookedSomethingEvent 0 :+| StreamEmpty
+events = event (ReceivedMoneyEvent 0) :+| event (BookedSomethingEvent 0) :+| event (BookedSomethingEvent 0) :+| StreamEmpty
 
 process :: Handler ts -> Stream ts -> Int
 process h (e :+| es) = invoke h e + process h es
+process _ StreamEmpty = 0
 
-eventName :: (Typeable a) => a -> String
-eventName = show . head . typeRepArgs . typeOf
+parser :: Parser '[ReceivedMoneyEvent, BookedSomethingEvent]
+parser =
+  (\c -> if c == "ReceivedMoneyEvent" then Just (ReceivedMoneyEvent 6) else Nothing)
+    :<| (\c -> if c == "BookedSomethingEvent" then Just (BookedSomethingEvent 6) else Nothing)
+    :<| PNothing
 
-eventNames :: Handler es -> [String]
-eventNames (e :^| es) = eventName e : eventNames es
-eventNames Empty      = []
+store :: [String]
+store = replicate 2 "BookedSomethingEvent" ++ replicate 5 "ReceivedMoneyEvent"
 
+parseStore :: Parser es -> [String] -> Stream es
+parseStore p = foldr (f . parseEvent p) StreamEmpty
+  where
+    f (Just e) s = e :+| s
+    f Nothing s = s
 
-parse' :: Elem es e -> Handler es -> String -> e
-parse' Here (f :^| _) = parse
-parse' (There s) (_ :^| fs) = parse' s fs
+bootstrap :: Handler es -> Parser es -> Int
+bootstrap h p = process h (parseStore p store)
 
-parseEvent :: Handler es -> String -> e
-parseEvent h json = parse' (parseEvent' h json) h json
-
-parseEvent' :: Handler es -> String -> Elem es e
-parseEvent' (e :^| es) json 
-  | json == eventName e = undefined -- TODO Here
-  | otherwise = There $ parseEvent' es json
-
--- t = process sampleHandler $ x :+| StreamEmpty
-
--- getStream h = foldr c StreamEmpty names -- TODO read from a store
--- getStream h = foldr (\n p -> parseEvent h n :+| p) g names
-getStream :: Handler es -> e
-getStream h = parseEvent h $ head $ eventNames h
-  -- where
-  --   names  = eventNames h
-  --   c :: String -> Stream ts -> Stream ts
-  --   -- c "ReceivedMoneyEvent"   p = ReceivedMoneyEvent   0 :+| p
-  --   -- c "BookedSomethingEvent" p = BookedSomethingEvent 0 :+| p
-  --   c e _ = error $ "Unexpected event: " ++ e
-
--- bootstrap :: Handler es -> Int
-bootstrap h = process h $ getStream h
-
-poc :: String
-poc = show $ bootstrap sampleHandler
+poc :: Int
+poc = bootstrap sampleHandler parser
 
 {-
 Some key observations:
