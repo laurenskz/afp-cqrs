@@ -34,11 +34,11 @@ type AccountBalance = Int
 
 type NewBalance = Int
 
-newtype BookedSomethingEvent = BookedSomethingEvent Int
+newtype BookedSomethingEvent = BookedSomethingEvent Int deriving (Show)
 
-newtype ReceivedMoneyEvent = ReceivedMoneyEvent Int
+newtype ReceivedMoneyEvent = ReceivedMoneyEvent Int deriving (Show)
 
-newtype WonSomethingEvent = WonSomethingEvent String
+newtype WonSomethingEvent = WonSomethingEvent String deriving (Show)
 
 data Handler (events :: [Type]) where
   Empty :: Handler '[]
@@ -89,6 +89,14 @@ sampleEventHandler = do
   writeState (6 * currentInt)
   raiseEvent (BookedSomethingEvent 5)
   raiseEvent (WonSomethingEvent currentString)
+
+testSampleHandler :: IO (EventResult '[BookedSomethingEvent, WonSomethingEvent] '[Int, Bool])
+testSampleHandler = runHandler (ReceivedMoneyEvent 4) (TCons (return 4) (TCons (return "Hello world!") TNil)) sampleEventHandler
+
+hank = emptyTypeList Nothing :: TypedList [Bool, Int] Maybe
+
+henk :: Event '[String, Bool]
+henk = event True
 
 {-
 Some key observations:

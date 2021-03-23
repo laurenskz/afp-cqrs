@@ -5,4 +5,4 @@ module Lib
 import Poc
 
 someFunc :: IO ()
-someFunc = putStrLn poc
+someFunc = print poc

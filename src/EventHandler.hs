@@ -1,9 +1,12 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE UndecidableInstances #-}
 
-module EventHandler (EventHandler (), raiseEvent, handle, readState, writeState) where
+module EventHandler (EventHandler (), raiseEvent, handle, readState, writeState, runHandler,EventResult) where
 
+import Control.Applicative ((<|>))
 import Data.Kind (Type)
 import Event
 import TypeUtils
@@ -57,3 +60,18 @@ handle :: EventHandler rs ws i out i
 handle = Handle return
 
 data EventResult out states = EventResult [Event out] (TypedList states Maybe)
+
+instance (Show (Event out), Show (TypedList states Maybe)) => Show (EventResult out states) where
+  show (EventResult out states) = "EventResult:\n\t-Events:" ++ show out ++ "\n\t-States:" ++ show states
+
+runHandler :: Empty ws => i -> TypedList rs IO -> EventHandler rs ws i out a -> IO (EventResult out ws)
+runHandler _ _ (Return _) = return (EventResult [] (emptyTypeList Nothing))
+runHandler ev iors (Raise out xs) = do
+  (EventResult outs ws) <- runHandler ev iors xs
+  return (EventResult (out : outs) ws)
+runHandler ev iors (Write pos w xs) = do
+  (EventResult outs ws) <- runHandler ev iors xs
+  let updated = modifyValue' pos (<|> Just w) ws
+  return (EventResult outs updated)
+runHandler ev iors (Read pos f) = getValue' pos iors >>= runHandler ev iors . f
+runHandler ev iors (Handle f) = runHandler ev iors (f ev)
