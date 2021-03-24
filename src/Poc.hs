@@ -42,7 +42,7 @@ newtype WonSomethingEvent = WonSomethingEvent String deriving (Show)
 
 data Handler (events :: [Type]) where
   Empty :: Handler '[]
-  (:^|) :: (e -> Int) -> Handler es -> Handler (e : es)
+  (:^|) :: (Parsable e, Typeable e) => (e -> Int) -> Handler es -> Handler (e : es)
 
 infixr 6 :^|
 
@@ -66,20 +66,32 @@ process :: Handler ts -> Stream ts -> Int
 process h (e :+| es) = invoke h e + process h es
 process _ StreamEmpty = 0
 
-parser :: Parser '[ReceivedMoneyEvent, BookedSomethingEvent]
-parser =
-  (\c -> if c == "ReceivedMoneyEvent" then Just (ReceivedMoneyEvent 6) else Nothing)
-    :<| (\c -> if c == "BookedSomethingEvent" then Just (BookedSomethingEvent 6) else Nothing)
-    :<| PNothing
+class Parsable a where
+  parse :: String -> a
+
+instance Parsable ReceivedMoneyEvent where
+  parse _ = ReceivedMoneyEvent 6
+
+instance Parsable BookedSomethingEvent where
+  parse _ = BookedSomethingEvent 6
+
+eventName :: (Typeable a) => a -> String
+eventName = show . head . typeRepArgs . typeOf
+
+mkparser :: Handler es -> Parser es
+mkparser Empty      = PNothing 
+mkparser (h :^| hs) = make' :<| mkparser hs
+  where make' c | c == eventName h = Just $ parse c
+                | otherwise        = Nothing
 
 store :: [String]
 store = replicate 2 "BookedSomethingEvent" ++ replicate 5 "ReceivedMoneyEvent"
 
-bootstrap :: Handler es -> Parser es -> Int
-bootstrap h p = process h (parseStore p store)
+bootstrap :: Handler es -> [String] -> Int
+bootstrap h = process h . parseStore (mkparser h)
 
 poc :: Int
-poc = bootstrap sampleHandler parser
+poc = bootstrap sampleHandler store
 
 sampleEventHandler :: EventHandler '[Int, String] '[Int, Bool] ReceivedMoneyEvent '[BookedSomethingEvent, WonSomethingEvent] ()
 sampleEventHandler = do
