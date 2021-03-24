@@ -70,10 +70,10 @@ class Parsable a where
   parse :: String -> a
 
 instance Parsable ReceivedMoneyEvent where
-  parse _ = ReceivedMoneyEvent 6
+  parse = ReceivedMoneyEvent . read
 
 instance Parsable BookedSomethingEvent where
-  parse _ = BookedSomethingEvent 6
+  parse = BookedSomethingEvent . read
 
 eventName :: (Typeable a) => a -> String
 eventName = show . head . typeRepArgs . typeOf
@@ -81,13 +81,13 @@ eventName = show . head . typeRepArgs . typeOf
 mkparser :: Handler es -> Parser es
 mkparser Empty      = PNothing 
 mkparser (h :^| hs) = make' :<| mkparser hs
-  where make' c | c == eventName h = Just $ parse c
-                | otherwise        = Nothing
+  where make' (n, p) | n == eventName h = Just $ parse p
+                     | otherwise        = Nothing
 
-store :: [String]
-store = replicate 2 "BookedSomethingEvent" ++ replicate 5 "ReceivedMoneyEvent"
+store :: Store
+store = replicate 2 ("BookedSomethingEvent", "6") ++ replicate 5 ("ReceivedMoneyEvent", "6")
 
-bootstrap :: Handler es -> [String] -> Int
+bootstrap :: Handler es -> Store -> Int
 bootstrap h = process h . parseStore (mkparser h)
 
 poc :: Int
