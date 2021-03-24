@@ -7,6 +7,7 @@
 module EventHandler (EventHandler (), raiseEvent, handle, readState, writeState, runHandler,EventResult) where
 
 import Control.Applicative ((<|>))
+import Control.Monad ((>=>))
 import Data.Kind (Type)
 import Event
 import TypeUtils
@@ -42,10 +43,10 @@ instance Applicative (EventHandler rs ws i out) where
 
 instance Monad (EventHandler rs ws i out) where
   Return x >>= f = f x
-  Read e f' >>= f = Read e (\x -> f' x >>= f)
+  Read e f' >>= f = Read e (f' >=> f)
   Write e w x >>= f = Write e w (x >>= f)
   Raise out x >>= f = Raise out (x >>= f)
-  Handle f' >>= f = Handle (\x -> f' x >>= f)
+  Handle f' >>= f = Handle (f' >=> f)
 
 readState :: (Indexable rs r) => EventHandler rs ws i out r
 readState = Read position return
