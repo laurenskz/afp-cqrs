@@ -6,7 +6,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Event (Event (), pattern Ev, event, promote) where
+module Event (Event (), pattern Ev, event, promote, promoteSubset) where
 
 import Data.Kind (Type)
 import TypeUtils
@@ -26,3 +26,6 @@ event = Ev position
 
 promote :: Event as -> Event (a : as)
 promote (Ev p e) = Ev (There p) e
+
+promoteSubset :: Subset as bs -> Event as -> Event bs
+promoteSubset ss (Ev e s) = Ev (promoteElement e ss) s

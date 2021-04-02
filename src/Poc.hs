@@ -16,6 +16,7 @@
 
 module Poc where
 
+import Application
 import Control.Applicative ((<|>))
 import Control.Monad.Identity
 import Control.Monad.Reader (MonadReader, Reader, ReaderT)
@@ -25,6 +26,7 @@ import Data.Kind (Type)
 import Data.Typeable
 import Event
 import EventHandler
+import Execution
 import Stream
 import TypeUtils
 
@@ -58,7 +60,7 @@ sampleHandler = received :^| booked :^| Empty
     booked (BookedSomethingEvent x) = modify (\s -> s - x)
 
 process :: Handler es s -> Stream es -> State s ()
-process h (e :+| es)  = invoke h e >> process h es
+process h (e :+| es) = invoke h e >> process h es
 process _ StreamEmpty = return ()
 
 class Parsable a where
@@ -74,10 +76,12 @@ eventName :: (Typeable a) => a -> String
 eventName = show . head . typeRepArgs . typeOf
 
 mkparser :: Handler es s -> Parser es
-mkparser Empty      = PNothing
+mkparser Empty = PNothing
 mkparser (h :^| hs) = make' :<| mkparser hs
-  where make' (n, p) | n == eventName h = Just $ parse p
-                     | otherwise        = Nothing
+  where
+    make' (n, p)
+      | n == eventName h = Just $ parse p
+      | otherwise = Nothing
 
 store :: Store
 store = replicate 2 ("BookedSomethingEvent", "6") ++ replicate 5 ("ReceivedMoneyEvent", "6")
@@ -104,6 +108,53 @@ hank = emptyTypeList Nothing :: TypedList [Bool, Int] Maybe
 
 henk :: Event '[String, Bool]
 henk = event True
+
+newtype Balance = Balance Int deriving (Show)
+
+newtype Price = Price String deriving (Show)
+
+newtype User = User String deriving (Show)
+
+type POCEvents = '[BookedSomethingEvent, WonSomethingEvent, ReceivedMoneyEvent]
+
+type POCStates = '[Balance, Price, User]
+
+emptyHandlers :: HandlersT '[] POCEvents POCStates
+emptyHandlers = HNil
+
+pocHandler1 :: EventHandler '[Balance] '[Price, Balance] ReceivedMoneyEvent '[WonSomethingEvent] ()
+pocHandler1 = do
+  (ReceivedMoneyEvent x) <- handle
+  (Balance current) <- readState
+  writeState (Balance (current + x))
+  raiseEvent (WonSomethingEvent ("Price! being added to balance of " ++ show current))
+
+pocHandler2 :: EventHandler '[Price] '[User] WonSomethingEvent '[] ()
+pocHandler2 = do
+  (WonSomethingEvent name) <- handle
+  writeState (User ("User with a nice price!:" ++ name))
+
+type POCHandlers =
+  '[ 'KHandler '[Balance] '[Price, Balance] ReceivedMoneyEvent '[WonSomethingEvent],
+     'KHandler '[Price] '[User] WonSomethingEvent '[]
+   ]
+
+handlers :: HandlersT POCHandlers POCEvents POCStates
+handlers = addHandler pocHandler1 (addHandler pocHandler2 emptyHandlers)
+
+initialStates :: TypedList POCStates Identity
+initialStates = TCons (Identity $ Balance 0) (TCons (Identity $ Price "") (TCons (Identity $ User "") TNil))
+
+application :: Application POCHandlers POCEvents POCStates
+application = Application handlers (emptyTypeList []) (emptyTypeList [])
+
+pocEvents :: [Event POCEvents]
+pocEvents = [event $ ReceivedMoneyEvent 3]
+
+runPoc :: IO ()
+runPoc = do
+  finalStates <- executeCompletely application pocEvents initialStates
+  print finalStates
 
 {-
 Some key observations:

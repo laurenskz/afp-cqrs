@@ -32,7 +32,9 @@ library
       Stream,
       TypeUtils,
       Lib,
-      Poc
+      Poc,
+      Application,
+      Execution
   other-modules:
       Paths_cqrs
   hs-source-dirs:

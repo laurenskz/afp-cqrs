@@ -12,8 +12,8 @@ import TypeUtils
 
 type EventName = String
 type EventPayload = String
-type StoredEvent = (EventName, EventPayload)
-type Store = [StoredEvent]
+type SerializedEvent = (EventName, EventPayload)
+type Store = [SerializedEvent]
 
 data Stream (events :: [Type]) where
   StreamEmpty :: Stream h
@@ -23,11 +23,11 @@ infixr 6 :+|
 
 data Parser (events :: [Type]) where
   PNothing :: Parser '[]
-  (:<|) :: (StoredEvent -> Maybe e) -> Parser es -> Parser (e : es)
+  (:<|) :: (SerializedEvent -> Maybe e) -> Parser es -> Parser (e : es)
 
 infixr 6 :<|
 
-parseEvent :: Parser es -> StoredEvent -> Maybe (Event es)
+parseEvent :: Parser es -> SerializedEvent -> Maybe (Event es)
 parseEvent PNothing _ = Nothing
 parseEvent (p :<| ps) s = fmap event (p s) <|> fmap promote (parseEvent ps s)
 

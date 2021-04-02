@@ -4,7 +4,9 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module EventHandler (EventHandler (), raiseEvent, handle, readState, writeState, runHandler,EventResult) where
+module EventHandler where
+
+--  (EventHandler (), raiseEvent, handle, readState, writeState, runHandler,EventResult)
 
 import Control.Applicative ((<|>))
 import Control.Monad ((>=>))
@@ -21,10 +23,12 @@ a : The monad type variable
 -}
 data EventHandler (readStates :: [Type]) (writeStates :: [Type]) (inEvent :: Type) (outEvents :: [Type]) (a :: Type) where
   Return :: a -> EventHandler r w i out a
-  Read :: Elem rs r -> (r -> EventHandler rs w i out a) -> EventHandler rs w i out a
+  Read :: Elem rs r -> (r -> EventHandler rs ws i out a) -> EventHandler rs ws i out a
   Write :: Elem ws w -> w -> EventHandler rs ws i out a -> EventHandler rs ws i out a
   Raise :: Event out -> EventHandler rs ws i out a -> EventHandler rs ws i out a
   Handle :: (i -> EventHandler rs ws i out a) -> EventHandler rs ws i out a
+
+type BasicEventHandler s i events = EventHandler '[s] '[s] i events
 
 instance Functor (EventHandler rs ws i out) where
   fmap f (Return a) = Return (f a)
