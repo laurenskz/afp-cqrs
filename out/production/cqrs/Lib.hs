@@ -2,5 +2,7 @@ module Lib
     ( someFunc
     ) where
 
+import Poc
+
 someFunc :: IO ()
-someFunc = putStrLn "someFunc"
+someFunc = print poc

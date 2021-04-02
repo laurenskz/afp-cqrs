@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import Poc
 
 main :: IO ()
-main = someFunc
+main = runPoc
