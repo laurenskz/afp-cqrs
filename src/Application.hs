@@ -36,7 +36,6 @@ addHandler ::
   HandlersT ( 'KHandler rs ws i out ': ks) events states
 addHandler h ht = HCons ht subset subset subset position h
 
---data EventSource a = EventSource (a, EventSource a) | EEmpty
 
 data EventSourcesT (sourceTypes :: [Type]) where
   ENil :: EventSourcesT '[]
