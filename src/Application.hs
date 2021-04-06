@@ -13,11 +13,6 @@ import TypeUtils
 
 data KHandler = KHandler [Type] [Type] Type [Type]
 
-data KEndPoint = KQuery [Type] Type Type
-
-data EndpointsT (kEndpoints :: [KEndPoint]) (states :: [Type]) (responseTypes :: [Type]) where
-  ENDNil :: EndpointsT '[] states res
-
 data HandlersT (khandler :: [KHandler]) (events :: [Type]) (states :: [Type]) where
   HNil :: HandlersT '[] events states
   HCons ::
@@ -36,9 +31,5 @@ addHandler ::
   HandlersT ( 'KHandler rs ws i out ': ks) events states
 addHandler h ht = HCons ht subset subset subset position h
 
-
-data EventSourcesT (sourceTypes :: [Type]) where
-  ENil :: EventSourcesT '[]
-  EAppend :: [a] -> EventSourcesT as -> EventSourcesT (a ': as)
 
 data Application (khandler :: [KHandler]) (events :: [Type]) (states :: [Type]) = Application (HandlersT khandler events states) (TypedList events []) (TypedList states [])

@@ -155,25 +155,3 @@ runPoc :: IO ()
 runPoc = do
   finalStates <- executeCompletely application pocEvents initialStates
   print finalStates
-
-{-
-Some key observations:
-  - The order of events is important, we have to make sure they are handled in the exact same order to guarantee reproducibility
-  - Commands cannot modify the current state
-  - The only valid source of new events is an owner of the state paired with identifier
-  - The only way to update the owner of a state is through an event
-  - Events have all information to identify all owners by which they are handled
-  - An owner is said to be valid for event e if all events and commands lower in the order have been handled.
-
-  What happens when two owners have an overlapping state?
-  Suppose one owner produces an event that causes the following event:
-    - AccountBalance 10
-    - AccountBalance 100
-  The event is actually some kind of state in this case, this can happen because the owner is actually not the owner but there is overlap
-
-  What we offer:
-    - The guarantee that the events are processed in such a way that the owner only accepts events if it is in a valid state.
-      => Very strong:
-        - Traceability
-        - Consistency
--}
