@@ -54,7 +54,9 @@ orderPlacedHandler = do
   (Products products) <- readState
 
   let product = Map.lookup productId products
-  let account = Map.lookup BankAccountId accounts
+  let account = Map.lookup bankAccountId accounts
+
+  return ()
 
   -- check stock
   -- check balance
