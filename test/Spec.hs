@@ -17,85 +17,81 @@ type Price         = Int
 type Name = String
 
 newtype OrderPlacedEvent    = OrderPlacedEvent    (ProductId, BankAccountId, Amount) deriving (Show)
-newtype ProductCreatedEvent = ProductCreatedEvent (ProductId, Name, Price) deriving (Show) 
+newtype OrderSucceededEvent = OrderSucceededEvent (ProductId, BankAccountId, Amount) deriving (Show)
+newtype OrderFailedEvent    = OrderFailedEvent    (ProductId, BankAccountId, Amount) deriving (Show)
+newtype ProductCreatedEvent = ProductCreatedEvent (ProductId, Name, Price) deriving (Show)
 newtype StockAddedEvent     = StockAddedEvent     (ProductId, Amount) deriving (Show)
 newtype BalanceAddedEvent   = BalanceAddedEvent   (BankAccountId, Balance) deriving (Show)
 
 -- TODO make lookups state native
 newtype BankAccounts = BankAccounts (Map.Map BankAccountId Balance) deriving (Show)
-newtype Products     = Products     (Map.Map ProductId (Name, Price, Amount))
+newtype Products     = Products     (Map.Map ProductId (Name, Price, Amount)) deriving (Show)
 
-type POCEvents = '[OrderPlacedEvent, ProductCreatedEvent, StockAddedEvent, BalanceAddedEvent]
+type POCEvents = '[OrderPlacedEvent, OrderSucceededEvent, OrderFailedEvent, ProductCreatedEvent, StockAddedEvent, BalanceAddedEvent]
 type POCStates = '[BankAccounts, Products]
 
-balanceAddedHandler :: EventHandler '[BankAccounts] '[] BalanceAddedEvent '[] ()
+balanceAddedHandler :: EventHandler '[BankAccounts] '[BankAccounts] BalanceAddedEvent '[] ()
 balanceAddedHandler = do
   (BalanceAddedEvent (id, amount)) <- handle
   -- TODO modify
   (BankAccounts state) <- readState
   writeState $ BankAccounts $ Map.insertWith (+) id amount state
 
-stockAddedHandler :: EventHandler '[Products] '[] StockAddedEvent '[] ()
+stockAddedHandler :: EventHandler '[Products] '[Products] StockAddedEvent '[] ()
 stockAddedHandler = do
   (StockAddedEvent (id, amount)) <- handle
   (Products state) <- readState
   writeState $ Products $ Map.insertWith (\(_, _, a) (n, p, a') -> (n, p, a + a')) id ("", 0, amount) state
 
-productCreatedHandler :: EventHandler '[Products] '[] ProductCreatedEvent '[] ()
+productCreatedHandler :: EventHandler '[Products] '[Products] ProductCreatedEvent '[] ()
 productCreatedHandler = do
   (ProductCreatedEvent (id, name, price)) <- handle
   (Products state) <- readState
   writeState $ Products $ Map.insertWith (\(_, _, a) (n, p, _) -> (n, p, a)) id (name, price, 0) state
 
-orderPlacedHandler :: EventHandler '[BankAccounts, Products] '[] OrderPlacedEvent '[] ()
+orderPlacedHandler :: EventHandler '[BankAccounts, Products] '[BankAccounts, Products] OrderPlacedEvent '[OrderSucceededEvent, OrderFailedEvent] ()
 orderPlacedHandler = do
-  (OrderPlacedEvent (productId, bankAccountId, amount)) <- handle
+  (OrderPlacedEvent o@(productId, bankAccountId, amount)) <- handle
   (BankAccounts accounts) <- readState
-  (Products products) <- readState
+  (Products products)     <- readState
 
-  let product = Map.lookup productId products
-  let account = Map.lookup bankAccountId accounts
+  let success = do
+       (n, price, stock) <- Map.lookup productId products
+       balance           <- Map.lookup bankAccountId accounts
+       return $ stock >= amount && balance >= amount * price
 
-  return ()
+  case success of
+    Just True -> do
+      let (n, price, stock) = products Map.! productId
+      writeState $ Products $ Map.insert productId (n, price, stock - amount) products
+      writeState $ BankAccounts $ Map.adjust (\s -> s - amount * price) bankAccountId accounts
+      raiseEvent $ OrderSucceededEvent o
+    _ -> raiseEvent $ OrderFailedEvent o
 
-  -- check stock
-  -- check balance
+end :: HandlersT '[] POCEvents POCStates
+end = HNil
 
-  -- mutate states and raise success or failed event
+handlers = addHandler balanceAddedHandler
+         $ addHandler stockAddedHandler
+         $ addHandler productCreatedHandler
+         $ addHandler orderPlacedHandler
+       end
 
--- pocHandler1 :: EventHandler '[Balance] '[Price, Balance] ReceivedMoneyEvent '[WonSomethingEvent] ()
--- pocHandler1 = do
---   (ReceivedMoneyEvent x) <- handle
---   (Balance current) <- readState
---   writeState (Balance (current + x))
---   raiseEvent (WonSomethingEvent ("Price! being added to balance of " ++ show current))
+initialStates = TCons (Identity $ BankAccounts empty) (TCons (Identity $ Products empty) TNil)
 
--- pocHandler2 :: EventHandler '[Price] '[User] WonSomethingEvent '[] ()
--- pocHandler2 = do
---   (WonSomethingEvent name) <- handle
---   writeState (User ("User with a nice price!:" ++ name))
+application = Application handlers (emptyTypeList []) (emptyTypeList [])
 
--- type POCHandlers =
---   '[ 'KHandler '[Balance] '[Price, Balance] ReceivedMoneyEvent '[WonSomethingEvent],
---      'KHandler '[Price] '[User] WonSomethingEvent '[]
---    ]
+pocEvents :: [Event POCEvents]
+pocEvents = [ event $ ProductCreatedEvent (1, "Fiets", 100)
+            , event $ StockAddedEvent (1, 1)
+            , event $ BalanceAddedEvent (1, 100)
+            , event $ OrderPlacedEvent (1, 1, 1)
+            ]
 
--- handlers :: HandlersT POCHandlers POCEvents POCStates
--- handlers = addHandler pocHandler1 (addHandler pocHandler2 HNil)
-
--- initialStates :: TypedList POCStates Identity
--- initialStates = TCons (Identity $ Balance 0) (TCons (Identity $ Price "") (TCons (Identity $ User "") TNil))
-
--- application :: Application POCHandlers POCEvents POCStates
--- application = Application handlers (emptyTypeList []) (emptyTypeList [])
-
--- pocEvents :: [Event POCEvents]
--- pocEvents = [event $ ReceivedMoneyEvent 3]
-
--- runPoc :: IO ()
--- runPoc = do
---   finalStates <- executeCompletely application pocEvents initialStates
---   print finalStates
+runPoc :: IO ()
+runPoc = do
+  finalStates <- executeCompletely application pocEvents initialStates
+  print finalStates
 
 main :: IO ()
-main = return ()
+main = runPoc
