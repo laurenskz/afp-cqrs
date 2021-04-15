@@ -11,9 +11,11 @@ module Event (Event (), pattern Ev, event, promote, promoteSubset) where
 import Data.Kind (Type)
 import TypeUtils
 
+-- An event that has a type of any of the events given in the list. Basically this is a sum type of the list of types.
 data Event (as :: [Type]) where
   Ev :: Elem as a -> a -> Event as
 
+-- Not possible
 instance Show (Event '[]) where
   show = undefined
 
@@ -24,6 +26,7 @@ instance (Show a, Show (Event as)) => Show (Event (a : as)) where
 event :: (Indexable as a) => a -> Event as
 event = Ev position
 
+-- Every event is also an event of a larger set of events
 promote :: Event as -> Event (a : as)
 promote (Ev p e) = Ev (There p) e
 

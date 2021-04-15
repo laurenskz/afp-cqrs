@@ -4,9 +4,15 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+{-
+This module defines the interface the users will mainly use in order to implement their business logic.
+It defines the way events create updates to states and possibly new events. The user can do a certain number of things in response to an event:
+  - Read a state
+  - Update a state (based on a read of course)
+  - Raise any number of new events
+-}
 module EventHandler where
 
---  (EventHandler (), raiseEvent, handle, readState, writeState, runHandler,EventResult)
 
 import Control.Applicative ((<|>))
 import Control.Monad ((>=>))
@@ -30,6 +36,7 @@ data EventHandler (readStates :: [Type]) (writeStates :: [Type]) (inEvent :: Typ
 
 type BasicEventHandler s i events = EventHandler '[s] '[s] i events
 
+-- Implementations for making EventHandler a Monad so the user can use do notation
 instance Functor (EventHandler rs ws i out) where
   fmap f (Return a) = Return (f a)
   fmap f (Read e f') = Read e (fmap f . f')
@@ -52,6 +59,7 @@ instance Monad (EventHandler rs ws i out) where
   Raise out x >>= f = Raise out (x >>= f)
   Handle f' >>= f = Handle (f' >=> f)
 
+-- The main primitives the user will use in their monad blocks
 readState :: (Indexable rs r) => EventHandler rs ws i out r
 readState = Read position return
 
@@ -64,19 +72,8 @@ raiseEvent out = Raise (event out) (return ())
 handle :: EventHandler rs ws i out i
 handle = Handle return
 
+-- Result of running an EventHandler
 data EventResult out states = EventResult [Event out] (TypedList states Maybe)
 
 instance (Show (Event out), Show (TypedList states Maybe)) => Show (EventResult out states) where
   show (EventResult out states) = "EventResult:\n\t-Events:" ++ show out ++ "\n\t-States:" ++ show states
-
-runHandler :: Empty ws => i -> TypedList rs IO -> EventHandler rs ws i out a -> IO (EventResult out ws)
-runHandler _ _ (Return _) = return (EventResult [] (emptyTypeList Nothing))
-runHandler ev iors (Raise out xs) = do
-  (EventResult outs ws) <- runHandler ev iors xs
-  return (EventResult (out : outs) ws)
-runHandler ev iors (Write pos w xs) = do
-  (EventResult outs ws) <- runHandler ev iors xs
-  let updated = modifyValue' pos (<|> Just w) ws
-  return (EventResult outs updated)
-runHandler ev iors (Read pos f) = getValue' pos iors >>= runHandler ev iors . f
-runHandler ev iors (Handle f) = runHandler ev iors (f ev)

@@ -3,6 +3,10 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 
+{-
+Models a stream of events. At the moment not utilized yet. Sources and sinks of events need to be handled somewhere in the execution
+process. But our library has not yet fixed this and the choice remains open to the user.
+-}
 module Stream where
 
 import Control.Applicative ((<|>))

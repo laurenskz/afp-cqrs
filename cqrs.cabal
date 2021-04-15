@@ -31,8 +31,6 @@ library
       EventHandler,
       Stream,
       TypeUtils,
-      Lib,
-      Poc,
       Application,
       Execution
   other-modules:
